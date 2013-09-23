@@ -1,0 +1,98 @@
+diff --git a/sed/compile.c b/sed/compile.c
+index 513fac5..fb2bf03 100644
+--- a/sed/compile.c
++++ b/sed/compile.c
+@@ -138,7 +138,8 @@ static const char errors[] =
+   "expected newer version of sed\0"
+   "invalid usage of line address 0\0"
+   "unknown command: `%c'\0"
+-  "incomplete command";
++  "incomplete command\0"
++  "e/r/w commands disabled in sandbox mode";
+ 
+ #define BAD_BANG (errors)
+ #define BAD_COMMA (BAD_BANG + sizeof(N_("multiple `!'s")))
+@@ -167,6 +168,7 @@ static const char errors[] =
+ #define UNKNOWN_CMD (INVALID_LINE_0 + sizeof(N_("invalid usage of line address 0")))
+ #define INCOMPLETE_CMD (UNKNOWN_CMD + sizeof(N_("unknown command: `%c'")))
+ #define END_ERRORS (INCOMPLETE_CMD + sizeof(N_("incomplete command")))
++#define DISALLOWED_CMD (UNKNOWN_CMD + sizeof(N_("e/r/w commands disabled in sandbox mode")))
+ 
+ static struct output *file_read = NULL;
+ static struct output *file_write = NULL;
+@@ -338,6 +340,9 @@ read_filename()
+   struct buffer *b;
+   int ch;
+ 
++  if (sandbox)
++  	bad_prog(_(DISALLOWED_CMD));
++
+   b = init_buffer();
+   ch = in_nonblank();
+   while (ch != EOF && ch != '\n')
+@@ -1138,6 +1143,9 @@ compile_program(vector)
+ 	  break;
+ 
+ 	case 'e':
++	  if (sandbox)
++	  	bad_prog(_(DISALLOWED_CMD));
++
+ 	  ch = in_nonblank();
+ 	  if (ch == EOF || ch == '\n')
+ 	    {
+diff --git a/sed/sed.c b/sed/sed.c
+index af985e6..16ccc68 100644
+--- a/sed/sed.c
++++ b/sed/sed.c
+@@ -53,6 +53,9 @@ bool separate_files = false;
+ /* If set, follow symlinks when processing in place */
+ bool follow_symlinks = false;
+ 
++/* If set, opearate in 'sandbox' mode */
++bool sandbox = false;
++
+ /* How do we edit files in-place? (we don't if NULL) */
+ char *in_place_extension = NULL;
+ 
+@@ -130,6 +133,8 @@ Usage: %s [OPTION]... {script-only-if-no-other-script} [input-file]...\n\
+ #ifdef REG_PERL
+   fprintf(out, PERL_HELP);
+ #endif
++  fprintf(out, _("      --sandbox\n\
++                 operate in sandbox mode.\n"));
+   fprintf(out, _("  -s, --separate\n\
+                  consider files as separate rather than as a single continuous\n\
+                  long stream.\n"));
+@@ -178,6 +183,7 @@ main(argc, argv)
+     {"quiet", 0, NULL, 'n'},
+     {"posix", 0, NULL, 'p'},
+     {"silent", 0, NULL, 'n'},
++    {"sandbox", 0, NULL, 'o'},
+     {"separate", 0, NULL, 's'},
+     {"unbuffered", 0, NULL, 'u'},
+     {"version", 0, NULL, 'v'},
+@@ -293,6 +299,10 @@ main(argc, argv)
+ 	  break;
+ #endif
+ 
++	case 'o':
++	  sandbox = true;
++	  break;
++
+ 	case 's':
+ 	  separate_files = true;
+ 	  break;
+diff --git a/sed/sed.h b/sed/sed.h
+index 2c6aff5..d500e11 100644
+--- a/sed/sed.h
++++ b/sed/sed.h
+@@ -241,6 +241,9 @@ extern bool use_extended_syntax_p;
+ extern int mb_cur_max;
+ extern bool is_utf8;
+ 
++/* If set, operate in 'sandbox' mode - disable e/r/w commands */
++extern bool sandbox;
++
+ #define MBRTOWC(pwc, s, n, ps) \
+   (mb_cur_max == 1 ? \
+    (*(pwc) = btowc (*(unsigned char *) (s)), 1) : \
